@@ -24,9 +24,10 @@ root_agent = Agent(
     - news_analyst
     - get_current_time
     """,
-    sub_agents=[stock_analyst, funny_nerd],
     tools=[
         AgentTool(news_analyst),
+        AgentTool(stock_analyst), 
+        AgentTool(funny_nerd),
         get_current_time,
     ],
 )

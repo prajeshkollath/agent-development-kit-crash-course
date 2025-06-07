@@ -4,6 +4,7 @@ from .sub_agent.sleep_anomaly_detector.agent import sleep_anomaly_detector
 from .sub_agent.sleep_pattern_agent.agent import sleep_pattern_agent
 from .sub_agent.sleep_report_generator.agent import sleep_report_generator
 
+
 root_agent = Agent(
     name="sleep_manager",
     model="gemini-2.0-flash",

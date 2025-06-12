@@ -1,5 +1,0 @@
-ActivityID	CustomerID	Type	StartTime	EndTime	Duration	StartCondition	StartLocation	EndCondition	Notes
-1	1268	Sleep	25:41.0	00:05.0	34	NULL	NULL	NULL	NULL
-5	1264	Sleep	10:54.0	34:36.0	145	NULL	NULL	NULL	NULL
-16	1253	Sleep	00:00.0	16:41.0	307	NULL	NULL	NULL	NULL
-21  1246	Sleep	10:17.0	43:34.0	135	NULL	NULL	NULL	NULL

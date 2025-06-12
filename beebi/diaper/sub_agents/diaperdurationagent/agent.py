@@ -1,20 +1,35 @@
 from typing import Optional, Dict, Any
 import pandas as pd
 
-DATA_PATH = "/workspaces/agent-development-kit-crash-course/beebi/sleep/data/data1.csv"
+from beebi.data.db_utils import fetch_activity_data  # 使用数据库工具获取数据
 
-def preprocess_diaper_duration_data() -> pd.DataFrame:
-    df = pd.read_csv(DATA_PATH)
-    diaper_df = df[df["Type"] == "Diaper"].copy()
-    diaper_df["StartTime"] = pd.to_datetime(diaper_df["StartTime"])
-    diaper_df = diaper_df.sort_values("StartTime")
-    return diaper_df
+def preprocess_diaper_duration_data(
+    days: Optional[int] = None,
+    by_user: bool = False,
+    customer_id: Optional[int] = None
+) -> pd.DataFrame:
+    since_days = days if days is not None else 365
+    # 支持按用户过滤
+    df = fetch_activity_data(
+        customer_id=customer_id if customer_id is not None else 10,
+        activity_type="Diaper",
+        since_days=since_days
+    )
+    if df.empty:
+        return df
+    df["StartTime"] = pd.to_datetime(df["StartTime"])
+    df = df.sort_values("StartTime")
+    return df
 
-def analyze_diaper_duration(days: Optional[int] = None, by_user: bool = False) -> Dict[str, Any]:
+def analyze_diaper_duration(
+    days: Optional[int] = None,
+    by_user: bool = False,
+    customer_id: Optional[int] = None
+) -> Dict[str, Any]:
     """
     计算每次尿布持续的时间（StartTime ~ 下一次 StartTime），分析平均更换间隔。
     """
-    diaper_df = preprocess_diaper_duration_data()
+    diaper_df = preprocess_diaper_duration_data(days=days, by_user=by_user, customer_id=customer_id)
     if diaper_df.empty:
         return {
             "summary": "没有尿布更换记录，无法分析更换间隔。",

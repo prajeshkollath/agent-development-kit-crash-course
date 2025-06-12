@@ -1,17 +1,21 @@
 import pandas as pd
 import re
-from typing import Optional
+from typing import Optional, Dict, Any
 
-DATA_PATH = "/workspaces/agent-development-kit-crash-course/beebi/sleep/data/data1.csv"
+from beebi.data.db_utils import fetch_activity_data  # 使用数据库工具获取数据
 
-def preprocess_feed_data() -> pd.DataFrame:
-    df = pd.read_csv(DATA_PATH)
-
-    # 保留 Feed 类型
-    feed_df = df[df["Type"] == "Feed"].copy()
+def preprocess_feed_data(
+    days: Optional[int] = None,
+    customer_id: Optional[int] = None
+) -> pd.DataFrame:
+    since_days = days if days is not None else 365
+    cid = customer_id if customer_id is not None else 10
+    df = fetch_activity_data(customer_id=cid, activity_type="Feed", since_days=since_days)
+    if df.empty:
+        return df
 
     # 转换时间格式
-    feed_df["StartTime"] = pd.to_datetime(feed_df["StartTime"])
+    df["StartTime"] = pd.to_datetime(df["StartTime"], errors="coerce")
 
     # 提取 ml 数值
     def extract_ml(value):
@@ -20,16 +24,18 @@ def preprocess_feed_data() -> pd.DataFrame:
         match = re.search(r"(\d+)\s*ml", str(value))
         return int(match.group(1)) if match else None
 
-    feed_df["Volume_ml"] = feed_df["EndCondition"].apply(extract_ml)
-    feed_df = feed_df[feed_df["Volume_ml"].notnull()]
+    df["Volume_ml"] = df["EndCondition"].apply(extract_ml)
+    feed_df = df[df["Volume_ml"].notnull()].copy()
+    feed_df = feed_df.dropna(subset=["StartTime"])
     feed_df.sort_values("StartTime", inplace=True)
 
     return feed_df[["StartTime", "StartCondition", "Volume_ml"]]
 
-
-
-def analyze_feed_volume(days: Optional[int] = None) -> dict:
-    feed_df = preprocess_feed_data()
+def analyze_feed_volume(
+    days: Optional[int] = None,
+    customer_id: Optional[int] = None
+) -> Dict[str, Any]:
+    feed_df = preprocess_feed_data(days=days, customer_id=customer_id)
 
     # 若无喂奶数据，直接返回提示
     if feed_df.empty:
@@ -46,9 +52,9 @@ def analyze_feed_volume(days: Optional[int] = None) -> dict:
     # 如果指定了天数，筛选最近 N 天的数据
     if days is not None:
         start_date = now - pd.Timedelta(days=days)
-        recent_df = feed_df[feed_df["StartTime"] >= start_date]
+        recent_df = feed_df[feed_df["StartTime"] >= start_date].copy()
     else:
-        recent_df = feed_df
+        recent_df = feed_df.copy()
 
     if recent_df.empty:
         return {
@@ -73,13 +79,14 @@ def analyze_feed_volume(days: Optional[int] = None) -> dict:
 
     return {
         "summary": f"过去 {days} 天共记录 {feed_count} 次喂奶，总摄入 {total_volume} ml，平均每次 {avg_per_feed:.1f} ml。" if days else f"共记录 {feed_count} 次喂奶，总摄入 {total_volume} ml，平均每次 {avg_per_feed:.1f} ml。",
-        "total_volume_ml": total_volume,
+        "total_volume_ml": int(total_volume),
         "average_volume_per_feed": round(avg_per_feed, 1),
         "feeds_per_day": round(feeds_per_day, 2),
         "recommendation": rec
     }
 
 from google.adk.agents import Agent
+
 feed_volume_agent = Agent(
     name="feed_volume_analyst",
     model="gemini-2.0-flash",
@@ -87,8 +94,7 @@ feed_volume_agent = Agent(
     instruction="""
     You are a feeding volume analyst agent responsible for analyzing feeding volume patterns.
     You can provide insights into total volume, frequency, and suggestions based on baby's milk intake.
-    
-    Use the analyze_feed_volume_tool to generate your report.
+    Use the analyze_feed_volume tool to generate your report.
     """,
     tools=[analyze_feed_volume],
 )

@@ -1,17 +1,21 @@
 import pandas as pd
 import re
-from typing import Optional
+from typing import Optional, Dict, Any
 
-DATA_PATH = "/workspaces/agent-development-kit-crash-course/beebi/sleep/data/data1.csv"
+from beebi.data.db_utils import fetch_activity_data  # 使用数据库工具获取数据
 
-def preprocess_feed_data() -> pd.DataFrame:
-    df = pd.read_csv(DATA_PATH)
-
-    # 保留 Feed 类型
-    feed_df = df[df["Type"] == "Feed"].copy()
+def preprocess_feed_data(
+    days: Optional[int] = None,
+    customer_id: Optional[int] = None
+) -> pd.DataFrame:
+    since_days = days if days is not None else 365
+    cid = customer_id if customer_id is not None else 10
+    df = fetch_activity_data(customer_id=cid, activity_type="Feed", since_days=since_days)
+    if df.empty:
+        return df
 
     # 转换时间格式
-    feed_df["StartTime"] = pd.to_datetime(feed_df["StartTime"])
+    df["StartTime"] = pd.to_datetime(df["StartTime"], errors="coerce")
 
     # 提取 ml 数值
     def extract_ml(value):
@@ -20,23 +24,23 @@ def preprocess_feed_data() -> pd.DataFrame:
         match = re.search(r"(\d+)\s*ml", str(value))
         return int(match.group(1)) if match else None
 
-    feed_df["Volume_ml"] = feed_df["EndCondition"].apply(extract_ml)
-    feed_df = feed_df[feed_df["Volume_ml"].notnull()]
+    df["Volume_ml"] = df["EndCondition"].apply(extract_ml)
+    feed_df = df[df["Volume_ml"].notnull()].copy()
+    feed_df = feed_df.dropna(subset=["StartTime"])
     feed_df.sort_values("StartTime", inplace=True)
 
     return feed_df[["StartTime", "StartCondition", "Volume_ml"]]
 
-
-import pandas as pd
-from typing import Optional
-
-def analyze_feed_intervals(days: Optional[int] = None) -> dict:
-    feed_df = preprocess_feed_data()
+def analyze_feed_intervals(
+    days: Optional[int] = None,
+    customer_id: Optional[int] = None
+) -> Dict[str, Any]:
+    feed_df = preprocess_feed_data(days=days, customer_id=customer_id)
 
     # 若无喂奶数据，直接返回提示
-    if feed_df.empty:
+    if feed_df.empty or feed_df.shape[0] < 2:
         return {
-            "summary": "没有喂奶记录，无法计算间隔。",
+            "summary": "没有足够的喂奶记录，无法计算间隔。",
             "average_interval_hours": None,
             "min_interval_hours": None,
             "max_interval_hours": None,
@@ -53,6 +57,7 @@ def analyze_feed_intervals(days: Optional[int] = None) -> dict:
     else:
         recent_df = feed_df.copy()
 
+    recent_df = recent_df.dropna(subset=["StartTime"])
     recent_df.sort_values("StartTime", inplace=True)
 
     if recent_df.shape[0] < 2:
@@ -99,7 +104,6 @@ feed_interval_agent = Agent(
     instruction="""
     You are a feeding interval analyst agent responsible for analyzing the timing between feeding sessions.
     You help detect patterns such as overly frequent feeding, long gaps between sessions, or irregular schedules.
-
     Use the analyze_feed_intervals tool to generate your report. Your output should be clear, concise, and insightful for parents or caregivers.
     """,
     tools=[analyze_feed_intervals],

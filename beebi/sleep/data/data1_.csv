@@ -1,5 +1,0 @@
-ActivityID,CustomerID,Type,StartTime,EndTime,Duration,StartCondition,StartLocation,EndCondition,Notes
-1,1268,Sleep,2025/5/22 16:25,2025/5/22 17:00,34,,,,
-5,1264,Sleep,2025/5/22 13:10,2025/5/22 15:34,145,,,,
-16,1253,Sleep,2025/5/22 6:00,2025/5/22 5:16,307,,,,
-21,1246,Sleep,2025/5/21 21:10,2025/5/21 23:43,135,,,,

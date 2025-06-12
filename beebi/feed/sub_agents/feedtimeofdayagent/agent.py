@@ -1,17 +1,21 @@
 import pandas as pd
 import re
-from typing import Optional
+from typing import Optional, Dict, Any
 
-DATA_PATH = "/workspaces/agent-development-kit-crash-course/beebi/sleep/data/data1.csv"
+from beebi.data.db_utils import fetch_activity_data  # 使用数据库工具获取数据
 
-def preprocess_feed_data() -> pd.DataFrame:
-    df = pd.read_csv(DATA_PATH)
-
-    # 保留 Feed 类型
-    feed_df = df[df["Type"] == "Feed"].copy()
+def preprocess_feed_data(
+    days: Optional[int] = None,
+    customer_id: Optional[int] = None
+) -> pd.DataFrame:
+    since_days = days if days is not None else 365
+    cid = customer_id if customer_id is not None else 10
+    df = fetch_activity_data(customer_id=cid, activity_type="Feed", since_days=since_days)
+    if df.empty:
+        return df
 
     # 转换时间格式
-    feed_df["StartTime"] = pd.to_datetime(feed_df["StartTime"])
+    df["StartTime"] = pd.to_datetime(df["StartTime"], errors="coerce")
 
     # 提取 ml 数值
     def extract_ml(value):
@@ -20,16 +24,18 @@ def preprocess_feed_data() -> pd.DataFrame:
         match = re.search(r"(\d+)\s*ml", str(value))
         return int(match.group(1)) if match else None
 
-    feed_df["Volume_ml"] = feed_df["EndCondition"].apply(extract_ml)
-    feed_df = feed_df[feed_df["Volume_ml"].notnull()]
+    df["Volume_ml"] = df["EndCondition"].apply(extract_ml)
+    feed_df = df[df["Volume_ml"].notnull()].copy()
+    feed_df = feed_df.dropna(subset=["StartTime"])
     feed_df.sort_values("StartTime", inplace=True)
 
     return feed_df[["StartTime", "StartCondition", "Volume_ml"]]
 
-
-
-def analyze_feed_time_of_day(days: Optional[int] = None) -> dict:
-    feed_df = preprocess_feed_data()
+def analyze_feed_time_of_day(
+    days: Optional[int] = None,
+    customer_id: Optional[int] = None
+) -> Dict[str, Any]:
+    feed_df = preprocess_feed_data(days=days, customer_id=customer_id)
 
     # 若无喂奶数据，直接返回提示
     if feed_df.empty:
@@ -59,7 +65,7 @@ def analyze_feed_time_of_day(days: Optional[int] = None) -> dict:
     def time_period(hour):
         if 6 <= hour < 10:
             return "早上"
-        elif 11 <= hour < 14:
+        elif 10 <= hour < 14:
             return "中午"
         elif 17 <= hour < 20:
             return "晚上"
@@ -95,7 +101,7 @@ def analyze_feed_time_of_day(days: Optional[int] = None) -> dict:
         "peak_periods": peak_periods,
         "recommendation": recommendation
     }
-    
+
 from google.adk.agents import Agent
 
 feed_time_of_day_agent = Agent(

@@ -2,12 +2,21 @@ from typing import Optional, Dict, Any
 import pandas as pd
 import re
 
-DATA_PATH = "/workspaces/agent-development-kit-crash-course/beebi/sleep/data/data1.csv"
+from beebi.data.db_utils import fetch_activity_data
 
-def preprocess_diaper_data() -> pd.DataFrame:
-    df = pd.read_csv(DATA_PATH)
-    diaper_df = df[df["Type"] == "Diaper"].copy()
-    diaper_df["StartTime"] = pd.to_datetime(diaper_df["StartTime"])
+def preprocess_diaper_data(
+    days: Optional[int] = None,
+    customer_id: Optional[int] = None
+) -> pd.DataFrame:
+    """
+    根据传入的 days 和 customer_id，从数据库获取指定天数内的尿布原始数据。
+    """
+    since_days = days if days is not None else 365
+    cid = customer_id if customer_id is not None else 10
+    df = fetch_activity_data(customer_id=cid, activity_type="Diaper", since_days=since_days)
+    if df.empty:
+        return df
+    df["StartTime"] = pd.to_datetime(df["StartTime"])
 
     # 提取尿量和便量
     def extract_condition(cond, kind):
@@ -17,20 +26,21 @@ def preprocess_diaper_data() -> pd.DataFrame:
         match = re.search(rf"{kind}:(small|medium|big)", cond)
         return match.group(1) if match else None
 
-    diaper_df["Pee"] = diaper_df["EndCondition"].apply(lambda x: extract_condition(x, "pee"))
-    diaper_df["Poo"] = diaper_df["EndCondition"].apply(lambda x: extract_condition(x, "poo"))
-    diaper_df = diaper_df.sort_values("StartTime")
-    return diaper_df
+    df["Pee"] = df["EndCondition"].apply(lambda x: extract_condition(x, "pee"))
+    df["Poo"] = df["EndCondition"].apply(lambda x: extract_condition(x, "poo"))
+    df = df.sort_values("StartTime")
+    return df
 
 def analyze_diaper_alert(
     days: Optional[int] = None,
     max_interval_hours: float = 5.0,
-    big_poo_threshold: int = 2
+    big_poo_threshold: int = 2,
+    customer_id: Optional[int] = None
 ) -> Dict[str, Any]:
     """
     识别不正常的排泄频率或类型，如连续多次 big poo，超过时间未换等。
     """
-    diaper_df = preprocess_diaper_data()
+    diaper_df = preprocess_diaper_data(days=days, customer_id=customer_id)
     if diaper_df.empty:
         return {
             "summary": "没有尿布更换记录，无法进行异常提醒分析。",

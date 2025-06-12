@@ -2,12 +2,18 @@ from typing import Optional, Dict, Any
 import pandas as pd
 import re
 
-DATA_PATH = "/workspaces/agent-development-kit-crash-course/beebi/sleep/data/data1.csv"
+from beebi.data.db_utils import fetch_activity_data  # 使用数据库工具获取数据
 
-def preprocess_diaper_data() -> pd.DataFrame:
-    df = pd.read_csv(DATA_PATH)
-    diaper_df = df[df["Type"] == "Diaper"].copy()
-    diaper_df["StartTime"] = pd.to_datetime(diaper_df["StartTime"])
+def preprocess_diaper_data(
+    days: Optional[int] = None,
+    customer_id: Optional[int] = None
+) -> pd.DataFrame:
+    since_days = days if days is not None else 365
+    cid = customer_id if customer_id is not None else 10
+    df = fetch_activity_data(customer_id=cid, activity_type="Diaper", since_days=since_days)
+    if df.empty:
+        return df
+    df["StartTime"] = pd.to_datetime(df["StartTime"])
 
     # 提取尿量和便量
     def extract_condition(cond, kind):
@@ -17,12 +23,16 @@ def preprocess_diaper_data() -> pd.DataFrame:
         match = re.search(rf"{kind}:(small|medium|big)", cond)
         return match.group(1) if match else None
 
-    diaper_df["Pee"] = diaper_df["EndCondition"].apply(lambda x: extract_condition(x, "pee"))
-    diaper_df["Poo"] = diaper_df["EndCondition"].apply(lambda x: extract_condition(x, "poo"))
-    return diaper_df
+    df["Pee"] = df["EndCondition"].apply(lambda x: extract_condition(x, "pee"))
+    df["Poo"] = df["EndCondition"].apply(lambda x: extract_condition(x, "poo"))
+    return df
 
-def analyze_diaper_frequency(days: Optional[int] = None, by_user: bool = False) -> Dict[str, Any]:
-    diaper_df = preprocess_diaper_data()
+def analyze_diaper_frequency(
+    days: Optional[int] = None,
+    by_user: bool = False,
+    customer_id: Optional[int] = None
+) -> Dict[str, Any]:
+    diaper_df = preprocess_diaper_data(days=days, customer_id=customer_id)
     if diaper_df.empty:
         return {
             "summary": "没有尿布更换记录，无法分析。",
@@ -52,12 +62,10 @@ def analyze_diaper_frequency(days: Optional[int] = None, by_user: bool = False) 
         avg_per_day = freq_stats.groupby(group_fields)["ChangeCount"].mean().reset_index(name="AvgChangePerDay")
         avg_per_day_records = avg_per_day.to_dict(orient="records")
         summary = f"最近 {days if days else '全部'} 天内，平均每日更换尿布 {avg_per_day['AvgChangePerDay'].mean():.1f} 次。（已分用户统计）"
-
     else:
         avg = freq_stats["ChangeCount"].mean()
         avg_per_day_records = [{"AvgChangePerDay": avg}]
         summary = f"最近 {days if days else '全部'} 天内，平均每日更换尿布 {avg:.1f} 次。"
-
 
     # 统计pee/poo类型分布
     pee_stats = recent_df["Pee"].value_counts(dropna=True).to_dict()

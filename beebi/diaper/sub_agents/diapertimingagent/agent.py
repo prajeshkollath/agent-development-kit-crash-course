@@ -1,19 +1,29 @@
 from typing import Optional, Dict, Any
 import pandas as pd
 
-DATA_PATH = "/workspaces/agent-development-kit-crash-course/beebi/sleep/data/data1.csv"
+from beebi.data.db_utils import fetch_activity_data  # 使用数据库工具获取数据
 
-def preprocess_diaper_timing_data() -> pd.DataFrame:
-    df = pd.read_csv(DATA_PATH)
-    diaper_df = df[df["Type"] == "Diaper"].copy()
-    diaper_df["StartTime"] = pd.to_datetime(diaper_df["StartTime"])
-    return diaper_df
+def preprocess_diaper_timing_data(
+    days: Optional[int] = None,
+    customer_id: Optional[int] = None
+) -> pd.DataFrame:
+    since_days = days if days is not None else 365
+    cid = customer_id if customer_id is not None else 10
+    df = fetch_activity_data(customer_id=cid, activity_type="Diaper", since_days=since_days)
+    if df.empty:
+        return df
+    df["StartTime"] = pd.to_datetime(df["StartTime"])
+    return df
 
-def analyze_diaper_timing(days: Optional[int] = None, bins: Optional[int] = 6) -> Dict[str, Any]:
+def analyze_diaper_timing(
+    days: Optional[int] = None,
+    bins: Optional[int] = 6,
+    customer_id: Optional[int] = None
+) -> Dict[str, Any]:
     """
     分析一天中尿布更换的时间分布，bins为一天分成的时间段数（如6为每4小时一个段）。
     """
-    diaper_df = preprocess_diaper_timing_data()
+    diaper_df = preprocess_diaper_timing_data(days=days, customer_id=customer_id)
     if diaper_df.empty:
         return {
             "summary": "没有尿布更换记录，无法分析时间分布。",

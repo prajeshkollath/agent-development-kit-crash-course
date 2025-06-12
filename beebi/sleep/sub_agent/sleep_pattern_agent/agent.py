@@ -1,28 +1,36 @@
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Dict, Any
 
-def analyze_sleep_patterns(days: Optional[int] = None) -> dict:
-    try:
-        df = pd.read_csv("/workspaces/agent-development-kit-crash-course/beebi/sleep/data/data1.csv")
+from beebi.data.db_utils import fetch_activity_data  # 使用数据库工具获取数据
 
-        # 只保留睡眠类型数据
+def preprocess_sleep_data(
+    days: Optional[int] = None,
+    customer_id: Optional[int] = None
+) -> pd.DataFrame:
+    since_days = days if days is not None else 365
+    cid = customer_id if customer_id is not None else 10
+    df = fetch_activity_data(customer_id=cid, activity_type="Sleep", since_days=since_days)
+    if df.empty:
+        return df
+    # 转换时间和数值类型
+    df["StartTime"] = pd.to_datetime(df["StartTime"], errors="coerce")
+    df["Duration"] = pd.to_numeric(df["Duration"], errors="coerce")
+    # 只保留有效记录
+    df = df.dropna(subset=["StartTime", "Duration"])
+    # 只保留类型为 Sleep 的记录
+    if "Type" in df.columns:
         df = df[df["Type"] == "Sleep"].copy()
+    df = df.sort_values("StartTime")
+    return df
 
-        # 检查必要列
-        if "StartTime" not in df.columns or "Duration" not in df.columns:
-            return {"status": "error", "error_message": "Missing StartTime or Duration column."}
-
-        # 1. 解析 StartTime 为 datetime
-        df["StartTime"] = pd.to_datetime(df["StartTime"])
-
-        # 可选：只分析最近 N 天的数据
-        if days is not None:
-            cutoff_date = datetime.now().date() - timedelta(days=days)
-            df = df[df["StartTime"].dt.date >= cutoff_date]
-
-        # 如果数据为空，提前返回
-        if df.empty:
+def analyze_sleep_patterns(
+    days: Optional[int] = None,
+    customer_id: Optional[int] = None
+) -> Dict[str, Any]:
+    try:
+        sleep_df = preprocess_sleep_data(days=days, customer_id=customer_id)
+        if sleep_df.empty:
             return {
                 "status": "success",
                 "report": {
@@ -35,10 +43,28 @@ def analyze_sleep_patterns(days: Optional[int] = None) -> dict:
                 }
             }
 
-        # 2. 计算 StartHour = 小时 + 分钟/60
-        df["StartHour"] = df["StartTime"].dt.hour + df["StartTime"].dt.minute / 60.0
+        # 只分析最近 N 天的数据
+        if days is not None:
+            cutoff_date = datetime.now().date() - timedelta(days=days)
+            sleep_df = sleep_df[sleep_df["StartTime"].dt.date >= cutoff_date]
 
-        # 3. 时间段划分
+        if sleep_df.empty:
+            return {
+                "status": "success",
+                "report": {
+                    "segment_distribution": {},
+                    "sleep_onset_drift": None,
+                    "duration_std_dev": None,
+                    "profile": "No sleep data available",
+                    "naps_detected": 0,
+                    "long_night_sleeps_detected": 0
+                }
+            }
+
+        # 计算 StartHour = 小时 + 分钟/60
+        sleep_df["StartHour"] = sleep_df["StartTime"].dt.hour + sleep_df["StartTime"].dt.minute / 60.0
+
+        # 时间段划分
         def classify_segment(hour):
             if 6 <= hour < 12:
                 return "Morning"
@@ -49,17 +75,17 @@ def analyze_sleep_patterns(days: Optional[int] = None) -> dict:
             else:
                 return "Overnight"
 
-        df["TimeSegment"] = df["StartHour"].apply(classify_segment)
-        segment_counts = df["TimeSegment"].value_counts().to_dict()
+        sleep_df["TimeSegment"] = sleep_df["StartHour"].apply(classify_segment)
+        segment_counts = sleep_df["TimeSegment"].value_counts().to_dict()
 
-        # 4. 睡眠一致性计算
-        sleep_onsets = df["StartHour"]
-        drift = round(sleep_onsets.max() - sleep_onsets.min(), 2)
-        duration_std = round(df["Duration"].std(), 2)
+        # 睡眠一致性计算
+        sleep_onsets = sleep_df["StartHour"]
+        drift = round(sleep_onsets.max() - sleep_onsets.min(), 2) if not sleep_onsets.empty else None
+        duration_std = round(sleep_df["Duration"].std(), 2) if not sleep_df["Duration"].empty else None
 
-        # 5. 睡眠模式识别
-        long_night_sleeps = df[(df["TimeSegment"] == "Overnight") & (df["Duration"] >= 240)]
-        naps = df[(df["TimeSegment"].isin(["Morning", "Afternoon"])) & (df["Duration"] < 120)]
+        # 睡眠模式识别
+        long_night_sleeps = sleep_df[(sleep_df["TimeSegment"] == "Overnight") & (sleep_df["Duration"] >= 240)]
+        naps = sleep_df[(sleep_df["TimeSegment"].isin(["Morning", "Afternoon"])) & (sleep_df["Duration"] < 120)]
 
         if len(long_night_sleeps) >= 5 and len(naps) >= 3:
             pattern = "Long night sleep with regular naps"
@@ -83,8 +109,10 @@ def analyze_sleep_patterns(days: Optional[int] = None) -> dict:
         }
 
     except Exception as e:
+        import traceback
+        print("Sleep pattern analysis error:", e)
+        traceback.print_exc()
         return {"status": "error", "error_message": str(e)}
-
 
 
 from google.adk.agents import Agent
@@ -95,8 +123,8 @@ sleep_pattern_agent = Agent(
     description="Recognizes and analyzes sleep time patterns, segmentations, and consistency.",
     instruction=(
         "You are the Sleep Pattern Recognition Agent. "
-        "Your job is to Recognizes and analyzes sleep time patterns, segmentations, and consistency using the tool 'analyze_sleep_patterns'"
-        "Your job is to classify sleep sessions by time (morning, afternoon, evening, overnight), "
+        "Your job is to recognize and analyze sleep time patterns, segmentations, and consistency using the tool 'analyze_sleep_patterns'. "
+        "Classify sleep sessions by time (morning, afternoon, evening, overnight), "
         "analyze sleep patterns (nap frequency, long night sleep), and compute consistency metrics "
         "such as sleep onset drift and duration variability. "
         "Always use the tool 'analyze_sleep_patterns' to provide reports. "

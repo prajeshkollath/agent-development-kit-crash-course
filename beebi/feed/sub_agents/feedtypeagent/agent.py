@@ -1,18 +1,21 @@
-from typing import Optional
+from typing import Optional, Dict, Any
 import pandas as pd
 import re
-from typing import Optional
 
-DATA_PATH = "/workspaces/agent-development-kit-crash-course/beebi/sleep/data/data1.csv"
+from beebi.data.db_utils import fetch_activity_data  # 使用数据库工具获取数据
 
-def preprocess_feed_data() -> pd.DataFrame:
-    df = pd.read_csv(DATA_PATH)
-
-    # 保留 Feed 类型
-    feed_df = df[df["Type"] == "Feed"].copy()
+def preprocess_feed_data(
+    days: Optional[int] = None,
+    customer_id: Optional[int] = None
+) -> pd.DataFrame:
+    since_days = days if days is not None else 365
+    cid = customer_id if customer_id is not None else 10
+    df = fetch_activity_data(customer_id=cid, activity_type="Feed", since_days=since_days)
+    if df.empty:
+        return df
 
     # 转换时间格式
-    feed_df["StartTime"] = pd.to_datetime(feed_df["StartTime"])
+    df["StartTime"] = pd.to_datetime(df["StartTime"], errors="coerce")
 
     # 提取 ml 数值
     def extract_ml(value):
@@ -21,8 +24,9 @@ def preprocess_feed_data() -> pd.DataFrame:
         match = re.search(r"(\d+)\s*ml", str(value))
         return int(match.group(1)) if match else None
 
-    feed_df["Volume_ml"] = feed_df["EndCondition"].apply(extract_ml)
-    feed_df = feed_df[feed_df["Volume_ml"].notnull()]
+    df["Volume_ml"] = df["EndCondition"].apply(extract_ml)
+    feed_df = df[df["Volume_ml"].notnull()].copy()
+    feed_df = feed_df.dropna(subset=["StartTime"])
     feed_df.sort_values("StartTime", inplace=True)
 
     # 提取 FeedType 字段（从 StartCondition 字段标准化）
@@ -40,8 +44,11 @@ def preprocess_feed_data() -> pd.DataFrame:
 
     return feed_df[["StartTime", "StartCondition", "Volume_ml", "FeedType"]]
 
-def analyze_feed_type_ratio(days: Optional[int] = None) -> dict:
-    feed_df = preprocess_feed_data()
+def analyze_feed_type_ratio(
+    days: Optional[int] = None,
+    customer_id: Optional[int] = None
+) -> Dict[str, Any]:
+    feed_df = preprocess_feed_data(days=days, customer_id=customer_id)
 
     if feed_df.empty or "FeedType" not in feed_df.columns:
         return {
@@ -58,7 +65,6 @@ def analyze_feed_type_ratio(days: Optional[int] = None) -> dict:
         start_date = feed_df["StartTime"].min()
 
     recent_df = feed_df[(feed_df["StartTime"] >= start_date) & (feed_df["FeedType"].notnull())].copy()
-    
     if recent_df.empty:
         return {
             "summary": f"最近 {days if days else '全部'} 天内无喂奶类型记录，无法分析母乳与配方奶比例。",
@@ -107,7 +113,6 @@ feed_type_agent = Agent(
     You are a feed type analyst agent.
     Your task is to analyze the proportion and trends of breast milk and formula milk feeding over a specified period.
     Provide insights to guide mixed feeding strategies.
-    
     Use the analyze_feed_type_ratio tool to generate your report.
     """,
     tools=[analyze_feed_type_ratio],

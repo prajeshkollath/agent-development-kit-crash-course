@@ -4,17 +4,12 @@ from .sub_agents.diaper_report_agent.agent import diaper_report_agent
 from .sub_agents.feed_report_agent.agent import feed_report_agent 
 from .sub_agents.sleep_report_agent.agent import sleep_report_agent
 
-from fpdf import FPDF
-import os
-
-def expo
 parallel_reports_agent = ParallelAgent(
      name="ParallelBabyActivityAgent",
      sub_agents=[diaper_report_agent, feed_report_agent, sleep_report_agent],
      description="Runs multiple report agents in parallel to gather information."
  )
  
-
 
 # Baby Care Synthesis Agent
 baby_care_synthesis_agent = Agent(

@@ -9,9 +9,9 @@ question_answering_agent = Agent(
     You are a helpful assistant that answers questions about the user's preferences.
 
     Here is some information about the user:
-    Name: 
+    Name:
     {user_name}
-    Preferences: 
+    Preferences:
     {user_preferences}
     """,
 )

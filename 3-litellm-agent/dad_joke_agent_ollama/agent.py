@@ -1,4 +1,4 @@
-import os
+# import os
 import random
 
 from google.adk.agents import Agent
@@ -6,8 +6,8 @@ from google.adk.models.lite_llm import LiteLlm
 
 # https://docs.litellm.ai/docs/providers/openrouter
 model = LiteLlm(
-    model="openrouter/openai/gpt-4.1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
+    model="ollama_chat/qwen2.5:14b",
+    # api_key=os.getenv("OPENROUTER_API_KEY"),
 )
 
 
@@ -22,7 +22,7 @@ def get_dad_joke():
 
 
 root_agent = Agent(
-    name="dad_joke_agent",
+    name="dad_joke_agent_ollama",
     model=model,
     description="Dad joke agent",
     instruction="""

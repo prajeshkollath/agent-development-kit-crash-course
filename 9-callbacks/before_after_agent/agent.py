@@ -1,8 +1,7 @@
 """
 Before and After Agent Callbacks Example
 
-This example demonstrates how to use both before_agent_callback and after_agent_callback 
-for logging purposes.
+This example demonstrates how to use both before_agent_callback and after_agent_callback for logging purposes.
 """
 
 from datetime import datetime
@@ -95,7 +94,7 @@ root_agent = LlmAgent(
     description="A basic agent that demonstrates before and after agent callbacks",
     instruction="""
     You are a friendly greeting agent. Your name is {agent_name}.
-    
+
     Your job is to:
     - Greet users politely
     - Respond to basic questions

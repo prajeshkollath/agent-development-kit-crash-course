@@ -1,8 +1,7 @@
 """
 Before and After Model Callbacks Example
 
-This example demonstrates using model callbacks 
-to filter content and log model interactions.
+This example demonstrates using model callbacks to filter content and log model interactions.
 """
 
 import copy
@@ -151,7 +150,7 @@ root_agent = LlmAgent(
     description="An agent that demonstrates model callbacks for content filtering and logging",
     instruction="""
     You are a helpful assistant.
-    
+
     Your job is to:
     - Answer user questions concisely
     - Provide factual information

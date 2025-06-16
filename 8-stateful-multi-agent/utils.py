@@ -30,88 +30,64 @@ class Colors:
     BG_WHITE = "\033[47m"
 
 
-def update_interaction_history(session_service, app_name, user_id, session_id, entry):
-    """Add an entry to the interaction history in state.
-
-    Args:
-        session_service: The session service instance
-        app_name: The application name
-        user_id: The user ID
-        session_id: The session ID
-        entry: A dictionary containing the interaction data
-            - requires 'action' key (e.g., 'user_query', 'agent_response')
-            - other keys are flexible depending on the action type
-    """
+async def update_interaction_history(session_service, app_name, user_id, session_id, entry):
+    """Update the interaction history in the session state."""
     try:
-        # Get current session
-        session = session_service.get_session(
+        session = await session_service.get_session(
             app_name=app_name, user_id=user_id, session_id=session_id
         )
-
-        # Get current interaction history
-        interaction_history = session.state.get("interaction_history", [])
-
-        # Add timestamp if not already present
-        if "timestamp" not in entry:
-            entry["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # Add the entry to interaction history
-        interaction_history.append(entry)
-
-        # Create updated state
-        updated_state = session.state.copy()
-        updated_state["interaction_history"] = interaction_history
-
-        # Create a new session with updated state
-        session_service.create_session(
-            app_name=app_name,
-            user_id=user_id,
-            session_id=session_id,
-            state=updated_state,
-        )
+        if session and session.state is not None:
+            if "interaction_history" not in session.state:
+                session.state["interaction_history"] = []
+            session.state["interaction_history"].append(entry)
+        else:
+            print(
+                f"{Colors.RED}Error: Could not retrieve session to update interaction history.{Colors.RESET}"
+            )
     except Exception as e:
         print(f"Error updating interaction history: {e}")
 
 
-def add_user_query_to_history(session_service, app_name, user_id, session_id, query):
+async def add_user_query_to_history(session_service, app_name, user_id, session_id, query):
     """Add a user query to the interaction history."""
-    update_interaction_history(
-        session_service,
-        app_name,
-        user_id,
-        session_id,
-        {
-            "action": "user_query",
-            "query": query,
-        },
+    entry = {
+        "action": "user_query",
+        "query": query,
+        "timestamp": datetime.now().isoformat(),
+    }
+    await update_interaction_history(
+        session_service, app_name, user_id, session_id, entry
     )
 
 
-def add_agent_response_to_history(
+async def add_agent_response_to_history(
     session_service, app_name, user_id, session_id, agent_name, response
 ):
     """Add an agent response to the interaction history."""
-    update_interaction_history(
-        session_service,
-        app_name,
-        user_id,
-        session_id,
-        {
-            "action": "agent_response",
-            "agent": agent_name,
-            "response": response,
-        },
+    entry = {
+        "action": "agent_response",
+        "agent": agent_name,
+        "response": response,
+        "timestamp": datetime.now().isoformat(),
+    }
+    await update_interaction_history(
+        session_service, app_name, user_id, session_id, entry
     )
 
 
-def display_state(
+async def display_state(
     session_service, app_name, user_id, session_id, label="Current State"
 ):
     """Display the current session state in a formatted way."""
     try:
-        session = session_service.get_session(
+        session = await session_service.get_session(
             app_name=app_name, user_id=user_id, session_id=session_id
         )
+        if session is None or session.state is None:
+            print(
+                f"{Colors.RED}Error: Could not retrieve session to display state.{Colors.RESET}"
+            )
+            return
 
         # Format the output with clear sections
         print(f"\n{'-' * 10} {label} {'-' * 10}")
@@ -229,10 +205,9 @@ async def call_agent_async(runner, user_id, session_id, query):
         f"\n{Colors.BG_GREEN}{Colors.BLACK}{Colors.BOLD}--- Running Query: {query} ---{Colors.RESET}"
     )
     final_response_text = None
-    agent_name = None
 
-    # Display state before processing the message
-    display_state(
+    # Display state before processing
+    await display_state(
         runner.session_service,
         runner.app_name,
         user_id,
@@ -244,29 +219,24 @@ async def call_agent_async(runner, user_id, session_id, query):
         async for event in runner.run_async(
             user_id=user_id, session_id=session_id, new_message=content
         ):
-            # Capture the agent name from the event if available
-            if event.author:
-                agent_name = event.author
-
+            # Process each event and get the final response if available
             response = await process_agent_response(event)
             if response:
                 final_response_text = response
+                # Add agent response to history
+                await add_agent_response_to_history(
+                    runner.session_service,
+                    runner.app_name,
+                    user_id,
+                    session_id,
+                    event.author, # Assuming event.author is the agent name
+                    response,
+                )
     except Exception as e:
         print(f"{Colors.BG_RED}{Colors.WHITE}ERROR during agent run: {e}{Colors.RESET}")
 
-    # Add the agent response to interaction history if we got a final response
-    if final_response_text and agent_name:
-        add_agent_response_to_history(
-            runner.session_service,
-            runner.app_name,
-            user_id,
-            session_id,
-            agent_name,
-            final_response_text,
-        )
-
     # Display state after processing the message
-    display_state(
+    await display_state(
         runner.session_service,
         runner.app_name,
         user_id,

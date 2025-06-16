@@ -2,7 +2,7 @@ from google.adk.agents import LlmAgent
 from pydantic import BaseModel, Field
 
 
-# --- Define Output Schema ---
+# Define output schema
 class EmailContent(BaseModel):
     subject: str = Field(
         description="The subject line of the email. Should be concise and descriptive."
@@ -12,7 +12,7 @@ class EmailContent(BaseModel):
     )
 
 
-# --- Create Email Generator Agent ---
+# Create email generator agent
 root_agent = LlmAgent(
     name="email_agent",
     model="gemini-2.0-flash",

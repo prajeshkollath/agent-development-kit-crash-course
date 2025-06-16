@@ -1,7 +1,8 @@
 import asyncio
+import uuid
 
 # Import the main customer service agent
-from customer_service_agent.agent import customer_service_agent
+from customer_service_agent.agent import root_agent
 from dotenv import load_dotenv
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -17,7 +18,7 @@ session_service = InMemorySessionService()
 # ===== PART 2: Define Initial State =====
 # This will be used when creating a new session
 initial_state = {
-    "user_name": "Brandon Hancock",
+    "user_name": "Matias Coca",
     "purchased_courses": [],
     "interaction_history": [],
 }
@@ -26,22 +27,25 @@ initial_state = {
 async def main_async():
     # Setup constants
     APP_NAME = "Customer Support"
-    USER_ID = "aiwithbrandon"
+    USER_ID = "matias_coca"
+    # SESSION_ID = str(uuid.uuid4())
 
     # ===== PART 3: Session Creation =====
     # Create a new session with initial state
-    new_session = session_service.create_session(
+    new_session = await session_service.create_session(  # Add await here
         app_name=APP_NAME,
         user_id=USER_ID,
         state=initial_state,
+        # session_id=SESSION_ID,
     )
     SESSION_ID = new_session.id
+    # Print the session ID for reference
     print(f"Created new session: {SESSION_ID}")
 
     # ===== PART 4: Agent Runner Setup =====
     # Create a runner with the main customer service agent
     runner = Runner(
-        agent=customer_service_agent,
+        agent=root_agent,
         app_name=APP_NAME,
         session_service=session_service,
     )
@@ -60,7 +64,7 @@ async def main_async():
             break
 
         # Update interaction history with the user's query
-        add_user_query_to_history(
+        await add_user_query_to_history(
             session_service, APP_NAME, USER_ID, SESSION_ID, user_input
         )
 
@@ -69,7 +73,7 @@ async def main_async():
 
     # ===== PART 6: State Examination =====
     # Show final session state
-    final_session = session_service.get_session(
+    final_session = await session_service.get_session(
         app_name=APP_NAME, user_id=USER_ID, session_id=SESSION_ID
     )
     print("\nFinal Session State:")

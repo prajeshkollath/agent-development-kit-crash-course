@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendar Agent - OAuth2 Flow</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #fff;
+        }
+        .chat-container {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .user-message {
+            background: rgba(76, 175, 80, 0.2);
+            margin-left: 20%;
+            border: 1px solid rgba(76, 175, 80, 0.3);
+        }
+        .agent-message {
+            background: rgba(33, 150, 243, 0.2);
+            margin-right: 20%;
+            border: 1px solid rgba(33, 150, 243, 0.3);
+        }
+        .input-container {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        #messageInput {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            background: rgba(255, 255, 255, 0.9);
+        }
+        button {
+            padding: 12px 24px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .oauth-status {
+            background: rgba(255, 193, 7, 0.2);
+            border: 1px solid rgba(255, 193, 7, 0.5);
+            border-radius: 5px;
+            padding: 15px;
+            margin: 15px 0;
+            text-align: center;
+            display: none;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Calendar Agent Chat</h1>
+        
+        <div class="chat-container" id="chatMessages">
+            <div class="message agent-message">
+                Hi! I can help you access your Google Calendar events. What would you like to do?
+            </div>
+        </div>
+
+        <div class="oauth-status" id="oauthStatus">
+            <span class="loading"></span>
+            <span id="oauthStatusText">Processing OAuth2...</span>
+        </div>
+
+        <div class="input-container">
+            <input type="text" id="messageInput" placeholder="Type your message..." onkeypress="handleKeyPress(event)">
+            <button onclick="sendMessage()" id="sendButton">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let currentUserEmail = '';
+        let oauthWindow = null;
+        let isOAuthInProgress = false;
+
+        // Check for email parameter in URL on page load
+        window.addEventListener('load', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const emailParam = urlParams.get('email');
+            
+            // Check for OAuth2 authorization code in localStorage
+            const oauth2Code = localStorage.getItem('oauth2_code');
+            const oauth2State = localStorage.getItem('oauth2_state');
+            
+            if (oauth2Code && oauth2State) {
+                // Extract email from state
+                let email = '';
+                if (oauth2State.includes('|')) {
+                    email = oauth2State.split('|')[1];
+                }
+                
+                if (email) {
+                    currentUserEmail = email;
+                    addMessage(`OAuth2 authorization received! Processing for ${email}...`, 'agent');
+                    
+                    // Send authorization code to ADK agent to exchange for tokens
+                    processOAuth2Authorization(oauth2Code, oauth2State, email);
+                    
+                    // Clear localStorage
+                    localStorage.removeItem('oauth2_code');
+                    localStorage.removeItem('oauth2_state');
+                    localStorage.removeItem('oauth2_timestamp');
+                }
+            } else if (emailParam) {
+                currentUserEmail = emailParam;
+                addMessage(`Welcome back! I'll fetch calendar events for ${currentUserEmail}...`, 'agent');
+                // Automatically fetch calendar events
+                setTimeout(() => {
+                    fetchCalendarEventsForUser(currentUserEmail);
+                }, 1000);
+            }
+        });
+
+        // Handle Enter key
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // Send message to agent
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message || isOAuthInProgress) return;
+
+            // Add user message to chat
+            addMessage(message, 'user');
+            input.value = '';
+            
+            // Check if this is a calendar access request
+            if (message.toLowerCase().includes('calendar') || message.toLowerCase().includes('events')) {
+                handleCalendarRequest(message);
+            } else {
+                // Send to agent API
+                await sendToAgent(message);
+            }
+        }
+
+        // Handle calendar access requests
+        function handleCalendarRequest(message) {
+            // Extract email if provided
+            const emailMatch = message.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/);
+            
+            if (emailMatch) {
+                currentUserEmail = emailMatch[0];
+                initiateOAuth2Flow(currentUserEmail);
+            } else {
+                addMessage("I'll help you access your calendar. What's your email address?", 'agent');
+            }
+        }
+
+        // Initiate OAuth2 flow
+        async function initiateOAuth2Flow(email) {
+            try {
+                addMessage(`I'll help you authorize access to ${email}'s calendar. Opening authorization window...`, 'agent');
+                
+                // Generate OAuth2 URL
+                const clientId = '720678319427-n80au5gqqokhelbcm7h5tvmusvm2h8i5.apps.googleusercontent.com';
+                const redirectUri = 'https://tool-agent-service-720678319427.asia-south1.run.app/';
+                const scopes = [
+                    'https://www.googleapis.com/auth/calendar.readonly',
+                    'https://www.googleapis.com/auth/calendar.events.readonly'
+                ];
+                
+                // Generate state parameter with email encoded
+                const state = generateState();
+                const stateWithEmail = `${state}|${email}`;
+                
+                const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+                    `client_id=${encodeURIComponent(clientId)}&` +
+                    `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+                    `scope=${encodeURIComponent(scopes.join(' '))}&` +
+                    `response_type=code&` +
+                    `access_type=offline&` +
+                    `prompt=consent&` +
+                    `state=${encodeURIComponent(stateWithEmail)}`;
+
+                // Open popup window
+                openOAuth2Popup(authUrl, email);
+                
+            } catch (error) {
+                addMessage(`Error initiating OAuth2 flow: ${error.message}`, 'agent');
+            }
+        }
+
+        // Open OAuth2 popup window
+        function openOAuth2Popup(url, email) {
+            isOAuthInProgress = true;
+            document.getElementById('sendButton').disabled = true;
+            showOAuthStatus('Opening OAuth2 popup window...');
+            
+            // Open popup window
+            const popupWidth = 500;
+            const popupHeight = 600;
+            const left = (window.innerWidth - popupWidth) / 2;
+            const top = (window.innerHeight - popupHeight) / 2;
+            
+            oauthWindow = window.open(
+                url,
+                'oauth2_popup',
+                `width=${popupWidth},height=${popupHeight},left=${left},top=${top},scrollbars=yes,resizable=yes`
+            );
+
+            // Check if popup was blocked
+            if (!oauthWindow) {
+                hideOAuthStatus();
+                addMessage('Popup was blocked. Please allow popups for this site and try again.', 'agent');
+                isOAuthInProgress = false;
+                document.getElementById('sendButton').disabled = false;
+                return;
+            }
+
+            // Poll for popup closure
+            pollOAuth2Popup();
+        }
+
+        // Poll OAuth2 popup for completion
+        function pollOAuth2Popup() {
+            const pollInterval = setInterval(() => {
+                if (oauthWindow && oauthWindow.closed) {
+                    clearInterval(pollInterval);
+                    hideOAuthStatus();
+                    isOAuthInProgress = false;
+                    document.getElementById('sendButton').disabled = false;
+                    
+                    // Check if we have tokens
+                    checkOAuth2Status();
+                }
+            }, 1000);
+        }
+
+        // Check OAuth2 status and get calendar events
+        async function checkOAuth2Status() {
+            try {
+                addMessage("Authorization completed! Let me fetch your calendar events...", 'agent');
+                
+                // Get calendar events for the user
+                const response = await fetch('/api/agent', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: `Get calendar events for ${currentUserEmail}`
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    if (result.events && result.events.length > 0) {
+                        let eventsText = `Found ${result.events.length} upcoming events for ${currentUserEmail}:\n`;
+                        result.events.forEach((event, index) => {
+                            eventsText += `${index + 1}. ${event.summary} - ${event.start}\n`;
+                        });
+                        addMessage(eventsText, 'agent');
+                    } else {
+                        addMessage(`No upcoming events found for ${currentUserEmail}.`, 'agent');
+                    }
+                } else {
+                    addMessage(`Error: ${result.message}`, 'agent');
+                }
+            } catch (error) {
+                addMessage(`Error fetching calendar events: ${error.message}`, 'agent');
+            }
+        }
+
+        // Send message to agent API
+        async function sendToAgent(message) {
+            try {
+                const response = await fetch('/api/agent', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message })
+                });
+
+                const result = await response.json();
+                addMessage(result.response || result.message || 'No response from agent', 'agent');
+            } catch (error) {
+                addMessage(`Error: ${error.message}`, 'agent');
+            }
+        }
+
+        // Add message to chat
+        function addMessage(text, sender) {
+            const chatMessages = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}-message`;
+            messageDiv.textContent = text;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Show OAuth status
+        function showOAuthStatus(message) {
+            const status = document.getElementById('oauthStatus');
+            const statusText = document.getElementById('oauthStatusText');
+            statusText.textContent = message;
+            status.style.display = 'block';
+        }
+
+        // Hide OAuth status
+        function hideOAuthStatus() {
+            document.getElementById('oauthStatus').style.display = 'none';
+        }
+
+        // Generate state parameter
+        function generateState() {
+            return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        }
+
+        // Listen for messages from popup
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'oauth2_complete') {
+                hideOAuthStatus();
+                isOAuthInProgress = false;
+                document.getElementById('sendButton').disabled = false;
+                
+                addMessage('OAuth2 authentication completed successfully!', 'agent');
+                checkOAuth2Status();
+            } else if (event.data && event.data.type === 'oauth2_error') {
+                hideOAuthStatus();
+                isOAuthInProgress = false;
+                document.getElementById('sendButton').disabled = false;
+                
+                addMessage(`OAuth2 authentication failed: ${event.data.error}`, 'agent');
+            }
+        });
+
+        // Handle email input
+        function handleEmailInput(email) {
+            currentUserEmail = email;
+            initiateOAuth2Flow(email);
+        }
+
+        // Fetch calendar events for a specific user
+        async function fetchCalendarEventsForUser(email) {
+            try {
+                addMessage(`Fetching calendar events for ${email}...`, 'agent');
+                
+                // Get calendar events for the user using OAuth2
+                const response = await fetch('/api/agent', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: `Get user calendar events for ${email} using OAuth2 credentials`
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    if (result.events && result.events.length > 0) {
+                        let eventsText = `Found ${result.events.length} upcoming events for ${email}:\n`;
+                        result.events.forEach((event, index) => {
+                            eventsText += `${index + 1}. ${event.summary} - ${event.start}\n`;
+                        });
+                        addMessage(eventsText, 'agent');
+                    } else {
+                        addMessage(`No upcoming events found for ${email}.`, 'agent');
+                    }
+                } else {
+                    addMessage(`Error: ${result.message}`, 'agent');
+                }
+            } catch (error) {
+                addMessage(`Error fetching calendar events: ${error.message}`, 'agent');
+            }
+        }
+
+        // Process OAuth2 authorization code
+        async function processOAuth2Authorization(authCode, state, email) {
+            try {
+                addMessage(`Exchanging authorization code for tokens...`, 'agent');
+                
+                // Send authorization code to ADK agent with specific format
+                const response = await fetch('/api/agent', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: `Handle OAuth2 callback for user ${email}. Authorization code: ${authCode}. State: ${state}. Please exchange this code for access tokens and store them for this user.`
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    addMessage(`OAuth2 tokens obtained successfully! Now fetching calendar events...`, 'agent');
+                    // Fetch calendar events
+                    setTimeout(() => {
+                        fetchCalendarEventsForUser(email);
+                    }, 1000);
+                } else {
+                    addMessage(`Error processing OAuth2: ${result.message}`, 'agent');
+                }
+            } catch (error) {
+                addMessage(`Error processing OAuth2 authorization: ${error.message}`, 'agent');
+            }
+        }
+    </script>
+</body>
+</html> 

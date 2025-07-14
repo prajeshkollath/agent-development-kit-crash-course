@@ -5,3 +5,7 @@ litellm==1.66.3
 google-genai==1.21.1
 python-dotenv==1.1.0
 deprecated==1.2.14
+uvicorn
+psycopg2-binary
+sqlalchemy 
+pydantic

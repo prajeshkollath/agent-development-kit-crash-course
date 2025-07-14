@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAuth2 Callback - Calendar Agent</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        .success-icon {
+            font-size: 48px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #fff;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .status.success {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid rgba(76, 175, 80, 0.5);
+        }
+        .status.error {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid rgba(244, 67, 54, 0.5);
+        }
+        .status.info {
+            background: rgba(33, 150, 243, 0.2);
+            border: 1px solid rgba(33, 150, 243, 0.5);
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn:hover {
+            background: #45a049;
+        }
+        .btn-secondary {
+            background: #2196F3;
+        }
+        .btn-secondary:hover {
+            background: #1976D2;
+        }
+        .manual-section {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            display: none;
+        }
+        .code-box {
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            word-break: break-all;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .copy-btn {
+            background: #FF9800;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin: 5px;
+        }
+        .copy-btn:hover {
+            background: #F57C00;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">✅</div>
+        <h1>OAuth2 Authentication Successful!</h1>
+        
+        <div id="status" class="status info">
+            <span class="loading"></span>
+            <span id="statusText">Processing authorization...</span>
+        </div>
+        
+        <div id="manual-section" class="manual-section">
+            <h3>📋 Manual Steps (if automatic processing failed):</h3>
+            <p>If the automatic processing didn't work, you can manually copy these values and use them in your agent:</p>
+            
+            <h4>🔑 Authorization Code:</h4>
+            <div class="code-box" id="auth-code"></div>
+            <button class="copy-btn" onclick="copyToClipboard('auth-code')">📋 Copy Code</button>
+            
+            <h4>🔄 State Parameter:</h4>
+            <div class="code-box" id="state-param"></div>
+            <button class="copy-btn" onclick="copyToClipboard('state-param')">📋 Copy State</button>
+            
+            <h4>📧 User Email:</h4>
+            <div class="code-box" id="user-email"></div>
+            <button class="copy-btn" onclick="copyToClipboard('user-email')">📋 Copy Email</button>
+            
+            <div style="text-align: center; margin-top: 20px;">
+                <a href="https://tool-agent-service-720678319427.asia-south1.run.app/frontend.html" class="btn btn-secondary" id="goBackButton">← Go Back to Agent Chat</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Extract authorization code and state from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const authCode = urlParams.get('code');
+        const state = urlParams.get('state');
+        const error = urlParams.get('error');
+        
+        // Extract email from state parameter (format: "state|email")
+        let userEmail = '';
+        if (state && state.includes('|')) {
+            userEmail = state.split('|')[1];
+        }
+        
+        // Check if this is a popup window
+        const isPopup = window.opener && window.opener !== window;
+        
+        function updateStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            const statusText = document.getElementById('statusText');
+            
+            status.className = `status ${type}`;
+            statusText.textContent = message;
+        }
+        
+        function showManualSection() {
+            document.getElementById('manual-section').style.display = 'block';
+        }
+        
+        function copyToClipboard(elementId) {
+            const element = document.getElementById(elementId);
+            const text = element.textContent;
+            
+            navigator.clipboard.writeText(text).then(function() {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = '✅ Copied!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            }).catch(function(err) {
+                console.error('Could not copy text: ', err);
+                alert('Failed to copy to clipboard. Please copy manually.');
+            });
+        }
+        
+        // Handle OAuth2 completion
+        async function handleOAuth2Completion() {
+            try {
+                if (error) {
+                    updateStatus(`Authorization failed: ${error}`, 'error');
+                    showManualSection();
+                    return;
+                }
+
+                if (!authCode) {
+                    updateStatus('No authorization code received', 'error');
+                    showManualSection();
+                    return;
+                }
+
+                updateStatus('Sending authorization to agent...', 'info');
+
+                // Try to send to parent window if this is a popup
+                if (isPopup) {
+                    window.opener.postMessage({
+                        type: 'oauth2_complete',
+                        code: authCode,
+                        state: state,
+                        timestamp: Date.now()
+                    }, '*');
+                    
+                    updateStatus('Authorization sent to agent! Closing popup...', 'success');
+                    setTimeout(() => {
+                        window.close();
+                    }, 2000);
+                    return;
+                }
+
+                // For same-tab flow, try to send to agent via localStorage or redirect
+                try {
+                    // Store in localStorage for the agent to pick up
+                    localStorage.setItem('oauth2_code', authCode);
+                    localStorage.setItem('oauth2_state', state);
+                    localStorage.setItem('oauth2_timestamp', Date.now());
+                    
+                    updateStatus('Authorization stored! Redirecting to agent...', 'success');
+                    
+                    // Redirect to the main agent page instead of going back
+                    setTimeout(() => {
+                        // Redirect to the default ADK interface with OAuth2 data
+                        const redirectUrl = userEmail ? 
+                            `https://tool-agent-service-720678319427.asia-south1.run.app/?oauth_code=${encodeURIComponent(authCode)}&oauth_state=${encodeURIComponent(state)}&email=${encodeURIComponent(userEmail)}` :
+                            'https://tool-agent-service-720678319427.asia-south1.run.app/';
+                        window.location.href = redirectUrl;
+                    }, 2000);
+                    
+                } catch (redirectError) {
+                    console.error('Redirect failed:', redirectError);
+                    updateStatus('Automatic redirect failed. Please use manual steps below.', 'error');
+                    showManualSection();
+                }
+
+            } catch (err) {
+                console.error('OAuth2 completion error:', err);
+                updateStatus(`Error: ${err.message}`, 'error');
+                showManualSection();
+            }
+        }
+        
+        // Initialize manual section with extracted data
+        if (authCode) {
+            document.getElementById('auth-code').textContent = authCode;
+            document.getElementById('state-param').textContent = state || 'Not provided';
+            document.getElementById('user-email').textContent = userEmail || 'Not provided';
+        }
+        
+        // Start processing
+        handleOAuth2Completion();
+        
+        // Auto-show manual section after 10 seconds if nothing happens
+        setTimeout(() => {
+            if (document.getElementById('statusText').textContent === 'Processing authorization...') {
+                updateStatus('Taking longer than expected. You can use manual steps below.', 'error');
+                showManualSection();
+            }
+        }, 10000);
+
+        // Update manual button with OAuth2 data
+        if (userEmail && authCode && state) {
+            const goBackButton = document.getElementById('goBackButton');
+            goBackButton.href = `https://tool-agent-service-720678319427.asia-south1.run.app/?oauth_code=${encodeURIComponent(authCode)}&oauth_state=${encodeURIComponent(state)}&email=${encodeURIComponent(userEmail)}`;
+        }
+    </script>
+</body>
+</html> 

@@ -5,3 +5,8 @@ litellm==1.66.3
 google-genai==1.21.1
 python-dotenv==1.1.0
 deprecated==1.2.14
+uvicorn
+psycopg2-binary
+sqlalchemy
+google-auth-httplib2==0.2.0
+google-api-python-client==2.172.0 
